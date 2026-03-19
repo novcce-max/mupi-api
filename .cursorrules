@@ -1,0 +1,20 @@
+# Mupi 后端开发准则
+
+## 技术栈规范
+- [span_0](start_span)框架: NestJS (REST API)[span_0](end_span)
+- [span_1](start_span)[span_2](start_span)数据库: PostgreSQL + TypeORM/Prisma[span_1](end_span)[span_2](end_span)
+- 语言: TypeScript (严格模式)
+- [span_3](start_span)响应格式: 统一使用 { ok: boolean, data?: any, error?: string }[span_3](end_span)
+
+## 业务规则
+- [span_4](start_span)[span_5](start_span)路径前缀: 所有接口必须以 /api 开头[span_4](end_span)[span_5](end_span)。
+- [span_6](start_span)[span_7](start_span)兼容性: 必须与原有 Next.js 前端定义的 API 结构完全一致，特别是 Contact 和 Wiki 模块[span_6](end_span)[span_7](end_span)。
+- [span_8](start_span)[span_9](start_span)安全性: CONTACT_EXPORT_TOKEN 和 WIKI_ADMIN_TOKEN 必须从环境变量读取，严禁硬编码[span_8](end_span)[span_9](end_span)。
+
+## [span_10](start_span)[span_11](start_span)[span_12](start_span)[span_13](start_span)[span_14](start_span)数据库映射[span_10](end_span)[span_11](end_span)[span_12](end_span)[span_13](end_span)[span_14](end_span)
+- 必须严格遵守 SQL 设计文档中的字段命名（如使用 slug, color_group 等）。
+- 复杂对象（如 properties, metadata）使用 JSONB 存储。
+
+## 代码风格
+- 使用 NestJS 标准模块化结构 (Module, Controller, Service, DTO, Entity)。
+- 使用 class-validator 进行输入校验，必须匹配文档中的正则限制。

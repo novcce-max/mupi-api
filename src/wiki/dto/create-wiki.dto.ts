@@ -1,0 +1,36 @@
+import { IsArray, IsObject, IsOptional, IsString } from 'class-validator';
+
+export class CreateWikiDto {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  englishName?: string;
+
+  @IsString()
+  slug: string;
+
+  @IsString()
+  category: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsArray()
+  photos?: unknown[];
+
+  @IsOptional()
+  @IsArray()
+  suitableScenes?: unknown[];
+
+  @IsOptional()
+  @IsString()
+  priceRange?: string;
+
+  @IsOptional()
+  @IsObject()
+  properties?: Record<string, unknown>;
+}

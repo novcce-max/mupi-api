@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+backups
+data
+.git
+.github
+.cursor
+*.log
+.env
+.env.*
+!/.env.example
+
