@@ -6,12 +6,14 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 export interface JwtPayload {
   sub: string;
   phone?: string;
+  email?: string;
   [key: string]: unknown;
 }
 
 export interface AuthUser {
   memberId: string;
   phone?: string;
+  email?: string;
 }
 
 @Injectable()
@@ -30,6 +32,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       memberId: String(payload.sub),
       phone: payload.phone,
+      email: payload.email,
     };
   }
 }

@@ -5,6 +5,7 @@ import {
   Headers,
   Ip,
   Post,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import type { Request } from 'express';
 import { AnalyticsService } from './analytics.service';
 import { TrackPageViewDto } from './dto/track-page-view.dto';
 import { TrackEventDto } from './dto/track-event.dto';
+import { AnalyticsQueryDto } from './dto/analytics-query.dto';
 
 @Controller('analytics')
 export class AnalyticsController {
@@ -56,39 +58,54 @@ export class AnalyticsController {
   }
 
   @Get('overview')
-  async overview(@Req() req: Request) {
+  async overview(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
     this.assertAdminReadAccess(req);
-    return this.analyticsService.getOverview();
+    return this.analyticsService.getOverview(query);
   }
 
   @Get('pages')
-  async pages(@Req() req: Request) {
+  async pages(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
     this.assertAdminReadAccess(req);
-    return this.analyticsService.getPages();
+    return this.analyticsService.getPages(query);
   }
 
   @Get('sources')
-  async sources(@Req() req: Request) {
+  async sources(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
     this.assertAdminReadAccess(req);
-    return this.analyticsService.getSources();
+    return this.analyticsService.getSources(query);
   }
 
   @Get('events')
-  async events(@Req() req: Request) {
+  async events(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
     this.assertAdminReadAccess(req);
-    return this.analyticsService.getEvents();
+    return this.analyticsService.getEvents(query);
   }
 
   @Get('conversion-pages')
-  async conversionPages(@Req() req: Request) {
+  async conversionPages(
+    @Req() req: Request,
+    @Query() query: AnalyticsQueryDto,
+  ) {
     this.assertAdminReadAccess(req);
-    return this.analyticsService.getConversionPages();
+    return this.analyticsService.getConversionPages(query);
   }
 
   @Get('funnel-pages')
-  async funnelPages(@Req() req: Request) {
+  async funnelPages(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
     this.assertAdminReadAccess(req);
-    return this.analyticsService.getFunnelPages();
+    return this.analyticsService.getFunnelPages(query);
+  }
+
+  @Get('attribution')
+  async attribution(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
+    this.assertAdminReadAccess(req);
+    return this.analyticsService.getAttribution(query);
+  }
+
+  @Get('search-keywords')
+  async searchKeywords(@Req() req: Request, @Query() query: AnalyticsQueryDto) {
+    this.assertAdminReadAccess(req);
+    return this.analyticsService.getSearchKeywords(query);
   }
 
   private assertAdminReadAccess(req: Request): void {

@@ -79,6 +79,10 @@ export class UpdateCaseDto {
 
   @IsOptional()
   @IsString()
+  videoUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
   seoTitle?: string;
 
   @IsOptional()

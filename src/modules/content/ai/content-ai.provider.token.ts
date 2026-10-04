@@ -1,0 +1,1 @@
+export const CONTENT_AI_PROVIDER = Symbol('CONTENT_AI_PROVIDER');

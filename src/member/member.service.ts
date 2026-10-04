@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -10,7 +10,8 @@ export interface MemberOverview {
   id: string;
   nickname: string;
   avatarUrl: string | null;
-  phone: string;
+  email: string | null;
+  phone: string | null;
   lastLoginAt: Date | null;
   stats: {
     points: number;
@@ -64,7 +65,8 @@ export class MemberService {
       id: member.id,
       nickname: member.nickname,
       avatarUrl: member.avatarUrl,
-      phone: member.phone,
+      email: member.email ?? null,
+      phone: member.phone ?? null,
       lastLoginAt: member.lastLoginAt,
       stats: member.stats
         ? {
@@ -95,5 +97,31 @@ export class MemberService {
       ok: true,
       data: histories,
     };
+  }
+
+  async updateNickname(
+    id: string,
+    nickname: string,
+  ): Promise<MemberResponse<MemberOverview | null>> {
+    const trimmed = nickname.trim();
+    if (!trimmed) {
+      throw new BadRequestException('昵称为空');
+    }
+
+    const member = await this.memberRepo.findOne({
+      where: { id },
+    });
+
+    if (!member) {
+      return {
+        ok: true,
+        data: null,
+      };
+    }
+
+    member.nickname = trimmed.slice(0, 100);
+    await this.memberRepo.save(member);
+
+    return this.getOverviewById(id);
   }
 }

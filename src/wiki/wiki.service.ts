@@ -149,6 +149,12 @@ export class WikiService {
     return entity;
   }
 
+  async adminFindOneBySlug(slug: string): Promise<WikiSpecies | null> {
+    const clean = slug.trim();
+    if (!clean) return null;
+    return this.wikiRepo.findOne({ where: { slug: clean } });
+  }
+
   async adminCreate(dto: CreateWikiSpeciesDto): Promise<WikiSpecies> {
     const entity = this.wikiRepo.create({
       name: dto.name,

@@ -2,17 +2,27 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { promises as fs } from 'node:fs';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 
 import { ContactLog } from './entities/contact-log.entity';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactLogDto } from './dto/update-contact-log.dto';
+import type {
+  ContactFunnelQueryDto,
+  ContactStatsRange,
+} from './dto/contact-funnel-query.dto';
 
-type ContactStorage = 'database' | 'file-fallback';
+type ContactStorage = 'database';
+const CHINA_TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+const IP_GEO_TIMEOUT_MS = 2500;
+
+type IpGeoResolved = {
+  regionLabel: string;
+};
 
 export interface ContactLogItem {
   id: string;
@@ -45,6 +55,7 @@ export interface ContactSummaryResult {
   won: number;
   linkedLeads: number;
   uniqueLeadVisitors: number;
+  regionDistribution: Array<{ region: string; count: number }>;
 }
 
 export interface ContactFunnelPageResult {
@@ -64,10 +75,215 @@ export interface ContactCreateResult {
 
 @Injectable()
 export class ContactService {
+  private readonly logger = new Logger(ContactService.name);
+  private readonly ipGeoCache = new Map<
+    string,
+    { expiresAt: number; value: IpGeoResolved }
+  >();
+
   constructor(
     @InjectRepository(ContactLog)
     private readonly contactLogRepository: Repository<ContactLog>,
   ) {}
+
+  private sanitizeIp(raw: string | null | undefined): string {
+    const ip = (raw ?? '').trim();
+    if (!ip) return '';
+    const first = ip.split(',')[0]?.trim() ?? '';
+    if (!first) return '';
+    if (first.startsWith('::ffff:')) return first.slice(7);
+    return first;
+  }
+
+  private isPrivateOrLocalIp(ip: string): boolean {
+    if (!ip) return true;
+    if (ip === '::1' || ip === '127.0.0.1' || ip === '0.0.0.0') return true;
+    if (
+      ip.startsWith('10.') ||
+      ip.startsWith('192.168.') ||
+      ip.startsWith('172.16.') ||
+      ip.startsWith('172.17.') ||
+      ip.startsWith('172.18.') ||
+      ip.startsWith('172.19.') ||
+      ip.startsWith('172.2') ||
+      ip.startsWith('172.30.') ||
+      ip.startsWith('172.31.')
+    ) {
+      return true;
+    }
+    if (ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80:')) {
+      return true;
+    }
+    return false;
+  }
+
+  private normalizeMainlandRegion(rawRegion: string): string {
+    const value = rawRegion.trim();
+    if (!value) return '中国大陆';
+    const regionMap: Record<string, string> = {
+      Beijing: '北京市',
+      Tianjin: '天津市',
+      Shanghai: '上海市',
+      Chongqing: '重庆市',
+      Hebei: '河北省',
+      Shanxi: '山西省',
+      Liaoning: '辽宁省',
+      Jilin: '吉林省',
+      Heilongjiang: '黑龙江省',
+      Jiangsu: '江苏省',
+      Zhejiang: '浙江省',
+      Anhui: '安徽省',
+      Fujian: '福建省',
+      Jiangxi: '江西省',
+      Shandong: '山东省',
+      Henan: '河南省',
+      Hubei: '湖北省',
+      Hunan: '湖南省',
+      Guangdong: '广东省',
+      Hainan: '海南省',
+      Sichuan: '四川省',
+      Guizhou: '贵州省',
+      Yunnan: '云南省',
+      Shaanxi: '陕西省',
+      Gansu: '甘肃省',
+      Qinghai: '青海省',
+      Taiwan: '台湾',
+      InnerMongolia: '内蒙古自治区',
+      Guangxi: '广西壮族自治区',
+      Tibet: '西藏自治区',
+      Ningxia: '宁夏回族自治区',
+      Xinjiang: '新疆维吾尔自治区',
+      HongKong: '香港',
+      Macau: '澳门',
+    };
+    if (regionMap[value]) return regionMap[value];
+    return value;
+  }
+
+  private normalizeCountryLabel(rawCountryCode: string, rawCountry: string): string {
+    const code = rawCountryCode.trim().toUpperCase();
+    const country = rawCountry.trim();
+    if (code === 'HK') return '香港';
+    if (code === 'MO') return '澳门';
+    if (code === 'TW') return '台湾';
+    if (code === 'US') return '美国';
+    if (!country) return code || '其他';
+    return country;
+  }
+
+  private async fetchIpGeo(ip: string): Promise<IpGeoResolved> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IP_GEO_TIMEOUT_MS);
+    try {
+      const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, {
+        method: 'GET',
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      if (!res.ok) return { regionLabel: '其他' };
+
+      const body = (await res.json()) as {
+        success?: boolean;
+        country_code?: string;
+        country?: string;
+        region?: string;
+      };
+      if (body.success === false) return { regionLabel: '其他' };
+
+      const countryCode = (body.country_code ?? '').trim().toUpperCase();
+      const country = (body.country ?? '').trim();
+      const region = (body.region ?? '').trim();
+
+      if (countryCode === 'CN') {
+        return { regionLabel: this.normalizeMainlandRegion(region) };
+      }
+      return { regionLabel: this.normalizeCountryLabel(countryCode, country) };
+    } catch {
+      return { regionLabel: '其他' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async resolveGeoByIp(rawIp: string | null | undefined): Promise<IpGeoResolved> {
+    const ip = this.sanitizeIp(rawIp);
+    if (!ip) return { regionLabel: '未知' };
+    if (this.isPrivateOrLocalIp(ip)) return { regionLabel: '内网/本机' };
+
+    const now = Date.now();
+    const cached = this.ipGeoCache.get(ip);
+    if (cached && cached.expiresAt > now) return cached.value;
+
+    const value = await this.fetchIpGeo(ip);
+    this.ipGeoCache.set(ip, {
+      value,
+      expiresAt: now + 24 * 60 * 60 * 1000,
+    });
+    return value;
+  }
+
+  private getChinaDayStart(date: Date): Date {
+    const shifted = new Date(date.getTime() + CHINA_TZ_OFFSET_MS);
+    return new Date(
+      Date.UTC(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth(),
+        shifted.getUTCDate(),
+        -8,
+        0,
+        0,
+        0,
+      ),
+    );
+  }
+
+  private addDays(date: Date, days: number): Date {
+    return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+
+  private getRangeBounds(range: ContactStatsRange = 'all'): {
+    start?: Date;
+    end?: Date;
+  } {
+    const todayStart = this.getChinaDayStart(new Date());
+    switch (range) {
+      case 'today':
+        return { start: todayStart, end: this.addDays(todayStart, 1) };
+      case 'yesterday':
+        return { start: this.addDays(todayStart, -1), end: todayStart };
+      case '7d':
+        return {
+          start: this.addDays(todayStart, -6),
+          end: this.addDays(todayStart, 1),
+        };
+      case '30d':
+        return {
+          start: this.addDays(todayStart, -29),
+          end: this.addDays(todayStart, 1),
+        };
+      case 'all':
+      default:
+        return {};
+    }
+  }
+
+  private applyStatsRange<T extends SelectQueryBuilder<ContactLog>>(
+    qb: T,
+    query?: ContactFunnelQueryDto,
+  ): T {
+    const { start, end } = this.getRangeBounds(query?.range ?? 'all');
+    if (start) {
+      qb.andWhere('log.createdAt >= :rangeStart', {
+        rangeStart: start.toISOString(),
+      });
+    }
+    if (end) {
+      qb.andWhere('log.createdAt < :rangeEnd', {
+        rangeEnd: end.toISOString(),
+      });
+    }
+    return qb;
+  }
 
   private inferSourceTag(fromPage: string, sourceTag?: string | null): string {
     const normalized = (sourceTag ?? '').trim().toLowerCase();
@@ -147,39 +363,83 @@ export class ContactService {
     };
   }
 
-  async getSummary(): Promise<ContactSummaryResult> {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+  async getSummary(
+    query: ContactFunnelQueryDto = {},
+  ): Promise<ContactSummaryResult> {
+    const totalQb = this.applyStatsRange(
+      this.contactLogRepository.createQueryBuilder('log'),
+      query,
+    );
+    const total = await totalQb.getCount();
+    const today = await this.applyStatsRange(
+      this.contactLogRepository.createQueryBuilder('log').where('1 = 1'),
+      { range: 'today' },
+    ).getCount();
+    const pending = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .where(`log.status IN (:...pendingStatuses)`, {
+          pendingStatuses: ['new', 'contacted', 'in_progress'],
+        }),
+      query,
+    ).getCount();
+    const quoted = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .where('log.status = :status', { status: 'quoted' }),
+      query,
+    ).getCount();
+    const won = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .where('log.status = :status', { status: 'won' }),
+      query,
+    ).getCount();
+    const linkedLeads = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .where(`COALESCE(log.visitorId, '') <> ''`),
+      query,
+    ).getCount();
+    const uniqueVisitorsRow = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .select('COUNT(DISTINCT log.visitorId)', 'cnt')
+        .where(`COALESCE(log.visitorId, '') <> ''`),
+      query,
+    ).getRawOne<{ cnt: string }>();
+    const regionRows = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .select('log.sourceIp', 'sourceIp'),
+      query,
+    ).getRawMany<{ sourceIp: string | null }>();
 
-    const total = await this.contactLogRepository.count();
-    const today = await this.contactLogRepository
-      .createQueryBuilder('log')
-      .where('log.createdAt >= :todayStart', {
-        todayStart: todayStart.toISOString(),
-      })
-      .getCount();
-    const pending = await this.contactLogRepository.count({
-      where: [
-        { status: 'new' },
-        { status: 'contacted' },
-        { status: 'in_progress' },
-      ],
-    });
-    const quoted = await this.contactLogRepository.count({
-      where: { status: 'quoted' },
-    });
-    const won = await this.contactLogRepository.count({
-      where: { status: 'won' },
-    });
-    const linkedLeads = await this.contactLogRepository
-      .createQueryBuilder('log')
-      .where(`COALESCE(log.visitorId, '') <> ''`)
-      .getCount();
-    const uniqueVisitorsRow = await this.contactLogRepository
-      .createQueryBuilder('log')
-      .select('COUNT(DISTINCT log.visitorId)', 'cnt')
-      .where(`COALESCE(log.visitorId, '') <> ''`)
-      .getRawOne<{ cnt: string }>();
+    const ips = Array.from(
+      new Set(
+        regionRows
+          .map((row) => this.sanitizeIp(row.sourceIp))
+          .filter((value) => value.length > 0),
+      ),
+    );
+    const ipGeoPairs = await Promise.all(
+      ips.map(async (ip) => ({ ip, geo: await this.resolveGeoByIp(ip) })),
+    );
+    const ipRegionMap = new Map<string, string>(
+      ipGeoPairs.map((item) => [item.ip, item.geo.regionLabel]),
+    );
+
+    const regionCountMap = new Map<string, number>();
+    for (const row of regionRows) {
+      const ip = this.sanitizeIp(row.sourceIp);
+      const region = ipRegionMap.get(ip) ?? '未知';
+      regionCountMap.set(region, (regionCountMap.get(region) ?? 0) + 1);
+    }
+
+    const regionDistribution = Array.from(regionCountMap.entries())
+      .map(([region, count]) => ({ region, count }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count);
 
     return {
       total,
@@ -189,28 +449,37 @@ export class ContactService {
       won,
       linkedLeads,
       uniqueLeadVisitors: Number(uniqueVisitorsRow?.cnt ?? 0),
+      regionDistribution,
     };
   }
 
-  async getFunnelPages(): Promise<ContactFunnelPageResult[]> {
-    const rows = await this.contactLogRepository
-      .createQueryBuilder('log')
-      .select(`split_part(log.fromPage, '?', 1)`, 'path')
-      .addSelect('COUNT(1)', 'leads')
-      .addSelect(
-        `SUM(CASE WHEN log.status IN ('contacted', 'in_progress') THEN 1 ELSE 0 END)`,
-        'contacted',
-      )
-      .addSelect(
-        `SUM(CASE WHEN log.status = 'quoted' THEN 1 ELSE 0 END)`,
-        'quoted',
-      )
-      .addSelect(
-        `SUM(CASE WHEN log.status = 'sampling' THEN 1 ELSE 0 END)`,
-        'sampling',
-      )
-      .addSelect(`SUM(CASE WHEN log.status = 'won' THEN 1 ELSE 0 END)`, 'won')
-      .addSelect(`SUM(CASE WHEN log.status = 'lost' THEN 1 ELSE 0 END)`, 'lost')
+  async getFunnelPages(
+    query: ContactFunnelQueryDto = {},
+  ): Promise<ContactFunnelPageResult[]> {
+    const rows = await this.applyStatsRange(
+      this.contactLogRepository
+        .createQueryBuilder('log')
+        .select(`split_part(log.fromPage, '?', 1)`, 'path')
+        .addSelect('COUNT(1)', 'leads')
+        .addSelect(
+          `SUM(CASE WHEN log.status IN ('contacted', 'in_progress') THEN 1 ELSE 0 END)`,
+          'contacted',
+        )
+        .addSelect(
+          `SUM(CASE WHEN log.status = 'quoted' THEN 1 ELSE 0 END)`,
+          'quoted',
+        )
+        .addSelect(
+          `SUM(CASE WHEN log.status = 'sampling' THEN 1 ELSE 0 END)`,
+          'sampling',
+        )
+        .addSelect(`SUM(CASE WHEN log.status = 'won' THEN 1 ELSE 0 END)`, 'won')
+        .addSelect(
+          `SUM(CASE WHEN log.status = 'lost' THEN 1 ELSE 0 END)`,
+          'lost',
+        ),
+      query,
+    )
       .groupBy(`split_part(log.fromPage, '?', 1)`)
       .orderBy('leads', 'DESC')
       .getRawMany<{
@@ -371,34 +640,9 @@ export class ContactService {
         storage: 'database',
       };
     } catch (error) {
-      // 4. 数据库失败时写入本地文件 /tmp/mupi_contact_logs.ndjson
-      const fallbackRecord = {
-        timestamp: new Date().toISOString(),
-        fromPage,
-        visitorId,
-        sourceTag,
-        name: dto.name,
-        phone: dto.phone,
-        email: dto.email ?? '',
-        message: dto.message,
-        website: dto.website ?? null,
-        sourceIp: context.ip,
-        userAgent: context.userAgent ?? null,
-        error: (error as Error).message,
-      };
-
-      const line = `${JSON.stringify(fallbackRecord)}\n`;
-
-      try {
-        await fs.appendFile('/tmp/mupi_contact_logs.ndjson', line, 'utf8');
-      } catch {
-        throw new InternalServerErrorException('Failed to persist contact log');
-      }
-
-      return {
-        logId: 0,
-        storage: 'file-fallback',
-      };
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`contact create failed: ${message}`);
+      throw new InternalServerErrorException('Failed to persist contact log');
     }
   }
 }

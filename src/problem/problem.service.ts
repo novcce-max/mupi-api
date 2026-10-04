@@ -46,7 +46,7 @@ export class ProblemService {
     const qb = this.repository.createQueryBuilder('problem');
     qb.where('problem.status = :status', { status: 'published' });
     qb.orderBy(
-      "COALESCE((problem.publish_meta->>'featuredOnHome')::boolean, false)",
+      "(CASE WHEN (problem.publish_meta->>'featuredOnHome') IN ('true', 't', '1', 'True') THEN 1 ELSE 0 END)",
       'DESC',
     ).addOrderBy('problem.id', 'ASC');
 

@@ -10,9 +10,10 @@ BUNDLE_DIR_NAME="${BUNDLE_DIR_NAME:-mupi-api-bt-offline}"
 # 默认用你之前推的 latest
 MUPI_API_IMAGE="${MUPI_API_IMAGE:-novcce/muni-api:latest}"
 
-POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16-alpine}"
-REDIS_IMAGE="${REDIS_IMAGE:-redis:7-alpine}"
-NGINX_IMAGE="${NGINX_IMAGE:-nginx:alpine}"
+HW_LIB="swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-${HW_LIB}/postgres:16-alpine}"
+REDIS_IMAGE="${REDIS_IMAGE:-${HW_LIB}/redis:7-alpine}"
+NGINX_IMAGE="${NGINX_IMAGE:-${HW_LIB}/nginx:alpine}"
 
 echo "[bundle] root: ${ROOT_DIR}"
 echo "[bundle] api dir: ${API_DIR}"
@@ -32,19 +33,21 @@ BUNDLE_DIR="${TMP_DIR}/${BUNDLE_DIR_NAME}"
 mkdir -p "${BUNDLE_DIR}"
 
 echo "[bundle] preparing compose + env files..."
-cp "${API_DIR}/docker-compose.prod.yml" "${BUNDLE_DIR}/"
+cp "${API_DIR}/docker-compose.yml" "${BUNDLE_DIR}/"
+cp "${API_DIR}/docker-compose.bt-build.yml" "${BUNDLE_DIR}/"
 cp "${API_DIR}/.env.production" "${BUNDLE_DIR}/"
+if [[ -f "${API_DIR}/.env.production.template" ]]; then
+  cp "${API_DIR}/.env.production.template" "${BUNDLE_DIR}/"
+fi
+if [[ -f "${API_DIR}/deploy.md" ]]; then
+  cp "${API_DIR}/deploy.md" "${BUNDLE_DIR}/"
+fi
 
 mkdir -p "${BUNDLE_DIR}/nginx/conf.d"
 cp "${API_DIR}/nginx/conf.d/default.conf" "${BUNDLE_DIR}/nginx/conf.d/default.conf"
 
 cp "${API_DIR}/scripts/bt-offline-start.sh" "${BUNDLE_DIR}/bt-offline-start.sh"
 chmod +x "${BUNDLE_DIR}/bt-offline-start.sh"
-
-# docker-compose.prod.yml 里有 ${MUPI_API_IMAGE:-...}，补一个 .env 让其固定使用你当前的镜像 tag
-cat > "${BUNDLE_DIR}/.env" <<EOF
-MUPI_API_IMAGE=${MUPI_API_IMAGE}
-EOF
 
 # compose 会挂载这些目录；先给空目录，避免首次启动失败
 mkdir -p "${BUNDLE_DIR}/data/postgres" "${BUNDLE_DIR}/data/redis"
@@ -82,5 +85,6 @@ echo
 echo "[bundle] On BaoTa, unpack & run:"
 echo "  cd /path/to/mupi-api-bt-offline"
 echo "  docker load -i images.tar"
-echo "  docker compose -f docker-compose.prod.yml up -d"
+echo "  docker compose -f docker-compose.yml up -d --build"
+echo "  # 或带 Nginx: docker compose -f docker-compose.bt-build.yml up -d --build"
 

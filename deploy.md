@@ -6,6 +6,8 @@
 
 > 注意：API 在应用里设置了全局前缀 `/api`，因此健康检查为 `/api/health`，Swagger 为 `/api/docs`。
 
+> **Compose**：`docker-compose.yml` 仅 **API + Redis**（适合外层已有 Nginx）；`docker-compose.bt-build.yml` 另含 **Nginx:80** 反代。宝塔 **mupi-api-bt-build.zip** / **mupi-api-bt-offline.zip** 内两个文件均会带上。
+
 ---
 
 ## 1) 服务器上传目录结构（推荐）
@@ -14,16 +16,15 @@
 
 ```
 /opt/mupi-api
-  ├─ docker-compose.prod.yml
-  ├─ .env.production.template    # 生产环境请复制成 .env.production 并填写真实值
+  ├─ docker-compose.yml
+  ├─ .env.production             # 生产环境变量（含 DATABASE_URL）
   ├─ nginx/
   │   └─ conf.d/
   │      └─ default.conf
   ├─ scripts/
   │   └─ backup-postgres.sh
   ├─ data/
-  │   ├─ postgres/   # PostgreSQL 持久化数据
-  │   └─ redis/      # Redis 持久化数据（AOF 持久化）
+  │   └─ redis/      # Redis 容器持久化（AOF）；PostgreSQL 使用宝塔面板库则无此目录需求
   └─ backups/        # 数据库备份输出目录（脚本会自动创建）
 ```
 
@@ -64,20 +65,25 @@ cd /opt/mupi-api
 
 ## 4) 配置 `.env.production`（所有密码都放这里）
 
-复制模板并修改：
+编辑：
 
 ```bash
-cp .env.production.template .env.production
 vim .env.production
 ```
 
-至少需要设置（生产强校验推荐项）：
+至少需要设置（生产强校验项）：
 
-- **应用与数据库**
+- **应用与数据库（当前默认：宝塔 PostgreSQL + Docker 内 API/Redis）**
+  - `DB_HOST=host.docker.internal`、`DB_PORT`、`DB_USERNAME`、`DB_PASSWORD`、`DB_DATABASE`
+  - `DATABASE_URL=postgres://用户:密码@host.docker.internal:5432/库名`（与上面一致；改密码时两处一起改）
   - `JWT_SECRET`
-  - `CORS_ORIGIN`
-  - `DB_USERNAME` / `DB_PASSWORD` / `DB_DATABASE`
-  - `REDIS_PASSWORD`
+  - `REDIS_URL`（Docker 内为 `redis://mupi-redis:6379/0`）
+
+**宝塔 PostgreSQL 须允许 Docker 访问宿主机库：**
+
+- `postgresql.conf`：`listen_addresses` 至少包含 `127.0.0.1`（或 `*`）。
+- `pg_hba.conf` 增加一行允许 Docker 网桥（示例）：`host all all 172.16.0.0/12 scram-sha-256`（或 `md5`，与库用户认证方式一致）。改后重启 PostgreSQL。
+- 在宝塔「数据库」中创建库 `mupi_sql`、用户 `mupi_user`，密码与 `.env.production` 一致；导入 SQL 在宝塔完成即可。
 
 - **Admin / 内部调用安全**
   - `INTERNAL_RPC_TOKEN` 或 `INTERNAL_RPC_TOKENS`（至少配置一个，随机、足够长，仅用于后端之间调用）
@@ -94,29 +100,31 @@ vim .env.production
 在 `/opt/mupi-api` 执行：
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d --build
 # 若你的系统是 docker-compose(v1)：
-# docker-compose -f docker-compose.prod.yml up -d
+# docker-compose up -d --build
 ```
 
 检查状态与日志：
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f mupi-nginx
-docker compose -f docker-compose.prod.yml logs -f mupi-api
+docker compose ps
+docker compose logs -f mupi-api
 ```
 
-本机验证：
+本机验证（默认 API 暴露 `3001`，未带 Nginx 时）：
 
 ```bash
-curl -sS http://127.0.0.1/api/health
+curl -sS http://127.0.0.1:3001/api/health
+curl -sS http://127.0.0.1:3001/api/health/db
 ```
 
-对外访问：
+对外访问（需在防火墙/安全组放行 `3001`，或另行用 Nginx 反代）：
 
-- `http://<SERVER_IP>/api/health`
-- `http://<SERVER_IP>/api/docs`
+- `http://<SERVER_IP>:3001/api/health`
+- `http://<SERVER_IP>:3001/api/docs`
+
+> 若需要自带 Nginx 的编排，请使用 `docker-compose.bt-build.yml`。
 
 ---
 

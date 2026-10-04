@@ -86,6 +86,10 @@ export class Case {
   @Column({ name: 'cover_image', type: 'varchar', length: 500, nullable: true })
   coverImage: string | null;
 
+  /** 施工过程/案例介绍视频（相对路径如 /videos/xx.mp4 或完整 URL） */
+  @Column({ name: 'video_url', type: 'varchar', length: 800, nullable: true })
+  videoUrl: string | null;
+
   @Column({ name: 'seo_title', type: 'varchar', length: 300, nullable: true })
   seoTitle: string | null;
 

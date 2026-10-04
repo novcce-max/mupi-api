@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class UpdateContentDto {
   @IsOptional()
@@ -36,4 +36,12 @@ export class UpdateContentDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @IsOptional()
+  @IsString()
+  channel?: string;
+
+  @IsOptional()
+  @IsObject()
+  aiMeta?: Record<string, unknown> | null;
 }

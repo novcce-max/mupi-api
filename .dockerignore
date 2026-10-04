@@ -9,5 +9,6 @@ data
 *.log
 .env
 .env.*
+!.env.production
 !/.env.example
 

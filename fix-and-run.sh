@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# 与 app.module ConfigModule 一致：非 production 时加载 .env.development（见仓库根 ENV.md）
+export NODE_ENV="${NODE_ENV:-development}"
+
 PORT="${PORT:-3001}"
 
 echo "[fix-and-run] Checking port ${PORT}..."

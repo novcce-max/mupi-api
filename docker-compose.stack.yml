@@ -1,0 +1,81 @@
+# 本地 / 单机一键栈：PostgreSQL + Redis + mupi-api（与现有 Baota  compose 同镜像与网络风格）
+#
+# 用法：
+#   cp .env.docker.example .env.docker   # 填密码与密钥
+#   docker compose -f docker-compose.stack.yml --env-file .env.docker up -d --build
+#
+# 首次建库：
+#   .env.docker 中保持 TYPEORM_SYNC=true、RUN_SQL_MIGRATIONS=true
+#   表由 TypeORM 按实体创建，再由 scripts/migrations/*.sql 补列/索引。
+# 已有数据后建议改为 TYPEORM_SYNC=false，仅保留 RUN_SQL_MIGRATIONS=true（迁移脚本多为 IF NOT EXISTS，可重复执行）。
+#
+# 健康检查：curl -sS http://127.0.0.1:3001/api/health
+#
+services:
+  mupi-postgres:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/postgres:15-alpine
+    container_name: mupi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mupi_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.docker}
+      POSTGRES_DB: mupi_sql
+    volumes:
+      - mupi_pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mupi_user -d mupi_sql']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - mupi-network
+
+  mupi-redis:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/redis:7-alpine
+    container_name: mupi-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - mupi-network
+
+  mupi-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mupi-api:latest
+    container_name: mupi-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    env_file:
+      - .env.docker
+    environment:
+      NODE_ENV: production
+      PORT: '3001'
+      DISABLE_DATABASE: 'false'
+      DATABASE_URL: postgres://mupi_user:${DB_PASSWORD}@mupi-postgres:5432/mupi_sql
+      DB_HOST: mupi-postgres
+      DB_PORT: '5432'
+      DB_DATABASE: mupi_sql
+      DB_USERNAME: mupi_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: redis://mupi-redis:6379/0
+      TYPEORM_SYNC: ${TYPEORM_SYNC:-true}
+      RUN_SQL_MIGRATIONS: ${RUN_SQL_MIGRATIONS:-true}
+    depends_on:
+      mupi-postgres:
+        condition: service_healthy
+      mupi-redis:
+        condition: service_started
+    networks:
+      - mupi-network
+
+volumes:
+  mupi_pgdata:
+
+networks:
+  mupi-network:
+    driver: bridge

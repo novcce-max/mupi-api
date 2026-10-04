@@ -5,6 +5,7 @@ export type CaseScene =
   | '酒店工装'
   | '办公空间'
   | '旧家具翻新'
+  | '木纹膜'
   | string;
 
 export type CaseBudget = '经济' | '中端' | '高端' | string;
@@ -35,6 +36,8 @@ export interface CaseItem {
   beforeImages?: string[];
   afterImages?: string[];
   coverImage?: string | null;
+  /** 案例详情页视频（上传后多为 /videos/... 或 CDN URL） */
+  videoUrl?: string | null;
   tags?: string[];
   coverLayout?: 'single' | 'triple' | string;
   publishMeta?: Record<string, unknown>;
@@ -239,6 +242,26 @@ export const CASES: CaseItem[] = [
     relatedProblems: [
       { label: '木皮起泡怎么处理', href: '/wenti/qipao' },
       { label: '报价陷阱如何规避', href: '/wenti/baojia-xian' },
+    ],
+  },
+  {
+    slug: 'muwen-project-k',
+    title: '木纹膜柜体项目 K',
+    scene: '木纹膜',
+    budget: '中端',
+    difficulty: '中',
+    materialGrade: 'B 级',
+    materialName: 'PVC 木纹膜',
+    materialHref: '/mupi/keji-mupi',
+    area: '68 ㎡',
+    timeline: '11 天',
+    challenge: '覆膜收口与批次纹理一致性要求高，异形边位易起翘。',
+    solution: '先小面预贴试色，异形位模板裁切，热压与修边分段验收。',
+    materials: ['木纹膜', '底涂', '修边胶'],
+    processImages: ['试色预贴', '热压覆膜', '修边验收'],
+    relatedProblems: [
+      { label: '木皮翘边怎么处理', href: '/wenti/qiabian' },
+      { label: '木皮色差怎么控制', href: '/wenti/secha' },
     ],
   },
 ];

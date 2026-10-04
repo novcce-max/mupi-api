@@ -61,6 +61,10 @@ export class Material {
   })
   coverLayout: string;
 
+  /** 选材详情页展示视频（相对路径或完整 URL） */
+  @Column({ name: 'video_url', type: 'varchar', length: 800, nullable: true })
+  videoUrl: string | null;
+
   @Column({
     name: 'publish_meta',
     type: 'jsonb',

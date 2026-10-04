@@ -35,15 +35,27 @@ if [[ -z "${DB_USERNAME:-}" || -z "${DB_PASSWORD:-}" || -z "${DB_DATABASE:-}" ]]
   exit 1
 fi
 
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "[bt-start] ERROR: DATABASE_URL must be set in .env.production"
+  exit 1
+fi
+
 NETWORK_NAME="${NETWORK_NAME:-mupi_internal_net}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-mupi-db}"
 REDIS_CONTAINER_NAME="${REDIS_CONTAINER_NAME:-mupi-redis}"
 API_CONTAINER_NAME="${API_CONTAINER_NAME:-mupi-api}"
 NGINX_CONTAINER_NAME="${NGINX_CONTAINER_NAME:-mupi-nginx}"
 
-POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16-alpine}"
-REDIS_IMAGE="${REDIS_IMAGE:-redis:7-alpine}"
-NGINX_IMAGE="${NGINX_IMAGE:-nginx:alpine}"
+# DB_HOST=mupi-db：启动本机 Postgres 容器；否则使用宝塔/外部 PostgreSQL（须配 host.docker.internal）
+USE_LOCAL_POSTGRES=0
+if [[ "${DB_HOST:-}" == "mupi-db" ]]; then
+  USE_LOCAL_POSTGRES=1
+fi
+
+HW_LIB="swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-${HW_LIB}/postgres:16-alpine}"
+REDIS_IMAGE="${REDIS_IMAGE:-${HW_LIB}/redis:7-alpine}"
+NGINX_IMAGE="${NGINX_IMAGE:-${HW_LIB}/nginx:alpine}"
 API_IMAGE="${API_IMAGE:-${MUPI_API_IMAGE:-novcce/muni-api:latest}}"
 
 echo "[bt-start] loading images.tar..."
@@ -51,7 +63,11 @@ docker load -i "${ROOT_DIR}/images.tar" >/dev/null
 
 echo "[bt-start] ensuring network: ${NETWORK_NAME}"
 if ! docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
-  docker network create --internal "${NETWORK_NAME}" >/dev/null
+  if [[ "${USE_LOCAL_POSTGRES}" == "1" ]]; then
+    docker network create --internal "${NETWORK_NAME}" >/dev/null
+  else
+    docker network create "${NETWORK_NAME}" >/dev/null
+  fi
 fi
 
 stop_rm_if_exist() {
@@ -67,18 +83,23 @@ stop_rm_if_exist "${API_CONTAINER_NAME}"
 stop_rm_if_exist "${DB_CONTAINER_NAME}"
 stop_rm_if_exist "${REDIS_CONTAINER_NAME}"
 
-mkdir -p "${ROOT_DIR}/data/postgres" "${ROOT_DIR}/data/redis"
+mkdir -p "${ROOT_DIR}/data/redis"
 
-echo "[bt-start] starting postgres..."
-docker run -d \
-  --name "${DB_CONTAINER_NAME}" \
-  --restart always \
-  --network "${NETWORK_NAME}" \
-  -v "${ROOT_DIR}/data/postgres:/var/lib/postgresql/data" \
-  -e "POSTGRES_USER=${DB_USERNAME}" \
-  -e "POSTGRES_PASSWORD=${DB_PASSWORD}" \
-  -e "POSTGRES_DB=${DB_DATABASE}" \
-  "${POSTGRES_IMAGE}" >/dev/null
+if [[ "${USE_LOCAL_POSTGRES}" == "1" ]]; then
+  mkdir -p "${ROOT_DIR}/data/postgres"
+  echo "[bt-start] starting postgres (local container)..."
+  docker run -d \
+    --name "${DB_CONTAINER_NAME}" \
+    --restart always \
+    --network "${NETWORK_NAME}" \
+    -v "${ROOT_DIR}/data/postgres:/var/lib/postgresql/data" \
+    -e "POSTGRES_USER=${DB_USERNAME}" \
+    -e "POSTGRES_PASSWORD=${DB_PASSWORD}" \
+    -e "POSTGRES_DB=${DB_DATABASE}" \
+    "${POSTGRES_IMAGE}" >/dev/null
+else
+  echo "[bt-start] skipping local postgres (DB_HOST=${DB_HOST:-unset}, use panel/external DB)"
+fi
 
 echo "[bt-start] starting redis..."
 docker run -d \
@@ -90,12 +111,22 @@ docker run -d \
   redis-server --appendonly yes >/dev/null
 
 echo "[bt-start] starting mupi-api..."
-docker run -d \
-  --name "${API_CONTAINER_NAME}" \
-  --restart always \
-  --network "${NETWORK_NAME}" \
-  --env-file "${ROOT_DIR}/.env.production" \
-  "${API_IMAGE}" >/dev/null
+if [[ "${USE_LOCAL_POSTGRES}" == "1" ]]; then
+  docker run -d \
+    --name "${API_CONTAINER_NAME}" \
+    --restart always \
+    --network "${NETWORK_NAME}" \
+    --env-file "${ROOT_DIR}/.env.production" \
+    "${API_IMAGE}" >/dev/null
+else
+  docker run -d \
+    --name "${API_CONTAINER_NAME}" \
+    --restart always \
+    --network "${NETWORK_NAME}" \
+    --add-host=host.docker.internal:host-gateway \
+    --env-file "${ROOT_DIR}/.env.production" \
+    "${API_IMAGE}" >/dev/null
+fi
 
 echo "[bt-start] starting nginx..."
 docker run -d \

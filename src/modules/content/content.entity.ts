@@ -12,6 +12,7 @@ export type ContentStatus = 'draft' | 'published';
 @Entity('content_items')
 @Index(['slug'], { unique: true })
 @Index(['status', 'updatedAt'])
+@Index(['channel', 'status', 'updatedAt'])
 export class ContentItem {
   @PrimaryGeneratedColumn()
   id: number;
@@ -33,6 +34,13 @@ export class ContentItem {
 
   @Column({ type: 'varchar', length: 20, default: 'draft' })
   status: ContentStatus;
+
+  /** baike | mupi | wenti — AI 草稿与运营归类 */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  channel: string | null;
+
+  @Column({ name: 'ai_meta', type: 'jsonb', nullable: true })
+  aiMeta: Record<string, unknown> | null;
 
   @Column({ name: 'seo_title', type: 'varchar', length: 220, nullable: true })
   seoTitle: string | null;

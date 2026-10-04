@@ -42,6 +42,12 @@ lerna-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.docker
+
+# 完整库 pg_dump 与本地 Postgres 数据目录（含数据，勿提交）
+/db-export/
+/data/
+scripts/exports/*.sql
 
 # temp directory
 .temp

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, Repository, type FindOptionsWhere } from 'typeorm';
 
 import { ContentItem, type ContentStatus } from './content.entity';
 import { CreateContentDto } from './dto/create-content.dto';
@@ -23,6 +23,12 @@ function coerceStatus(input: unknown): ContentStatus {
   return input === 'published' ? 'published' : 'draft';
 }
 
+function coerceChannel(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const s = input.trim().slice(0, 32);
+  return s || null;
+}
+
 function asStringArray(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
   return input.map((x) => String(x || '').trim()).filter(Boolean);
@@ -35,34 +41,72 @@ function stripHtml(input: string): string {
     .trim();
 }
 
+function extractTextFromBlocks(blocks: unknown[]): string {
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue;
+    const b = block as Record<string, unknown>;
+    if (typeof b.text === 'string') parts.push(b.text);
+    if (Array.isArray(b.items)) {
+      parts.push((b.items as unknown[]).join(' '));
+    }
+    if (Array.isArray(b.children)) {
+      for (const c of b.children as unknown[]) {
+        if (
+          c &&
+          typeof c === 'object' &&
+          typeof (c as { text?: string }).text === 'string'
+        ) {
+          parts.push(String((c as { text: string }).text));
+        }
+      }
+    }
+  }
+  return stripHtml(parts.join(' '));
+}
+
+function extractTextFromSiteDraftSite(site: Record<string, unknown>): string {
+  const bits: string[] = [];
+  for (const key of [
+    'title',
+    'summary',
+    'name',
+    'description',
+    'heroTitle',
+    'heroSubtitle',
+  ]) {
+    const v = site[key];
+    if (typeof v === 'string' && v.trim()) bits.push(v);
+  }
+  const props = site.properties;
+  if (props && typeof props === 'object' && !Array.isArray(props)) {
+    const p = props as Record<string, unknown>;
+    for (const key of ['intro', 'subtitle', 'seoText']) {
+      const v = p[key];
+      if (typeof v === 'string' && v.trim()) bits.push(v);
+    }
+  }
+  return stripHtml(bits.join(' '));
+}
+
 function extractTextFromContent(content: unknown): string {
   if (!content) return '';
   try {
     if (typeof content === 'string') return stripHtml(content);
     if (Array.isArray(content)) {
-      const parts: string[] = [];
-      for (const block of content) {
-        if (!block || typeof block !== 'object') continue;
-        const b = block as Record<string, unknown>;
-        if (typeof b.text === 'string') parts.push(b.text);
-        if (Array.isArray(b.items)) {
-          parts.push((b.items as unknown[]).join(' '));
-        }
-        if (Array.isArray(b.children)) {
-          for (const c of b.children as unknown[]) {
-            if (
-              c &&
-              typeof c === 'object' &&
-              typeof (c as any).text === 'string'
-            ) {
-              parts.push(String((c as any).text));
-            }
-          }
+      return extractTextFromBlocks(content);
+    }
+    if (typeof content === 'object' && content !== null) {
+      const o = content as Record<string, unknown>;
+      if (o.schemaVersion === 2 && Array.isArray(o.preview)) {
+        const fromPreview = extractTextFromBlocks(o.preview);
+        if (fromPreview) return fromPreview;
+        if (o.site && typeof o.site === 'object') {
+          return extractTextFromSiteDraftSite(
+            o.site as Record<string, unknown>,
+          );
         }
       }
-      return stripHtml(parts.join(' '));
-    }
-    if (typeof content === 'object') {
       return stripHtml(JSON.stringify(content));
     }
   } catch {
@@ -81,11 +125,14 @@ export class ContentService {
   async list(params?: {
     q?: string;
     status?: ContentStatus | 'all';
+    channel?: string;
   }): Promise<ContentItem[]> {
     const q = (params?.q || '').trim();
     const status = params?.status ?? 'published';
-    const where: any = {};
+    const channel = (params?.channel || '').trim();
+    const where: FindOptionsWhere<ContentItem> = {};
     if (status !== 'all') where.status = status;
+    if (channel) where.channel = channel;
     if (q) {
       where.title = ILike(`%${q}%`);
     }
@@ -98,6 +145,26 @@ export class ContentService {
 
   async findOne(id: number): Promise<ContentItem> {
     const item = await this.repo.findOne({ where: { id } });
+    if (!item) throw new NotFoundException('内容不存在');
+    return item;
+  }
+
+  /** 公开按 id：仅已发布（防止猜 id 读草稿） */
+  async findPublishedById(id: number): Promise<ContentItem> {
+    const item = await this.repo.findOne({
+      where: { id, status: 'published' },
+    });
+    if (!item) throw new NotFoundException('内容不存在');
+    return item;
+  }
+
+  /** 前台成页：仅已发布，避免草稿被猜 slug 读取 */
+  async findPublishedBySlug(slug: string): Promise<ContentItem> {
+    const key = String(slug || '').trim();
+    if (!key) throw new NotFoundException('内容不存在');
+    const item = await this.repo.findOne({
+      where: { slug: key, status: 'published' },
+    });
     if (!item) throw new NotFoundException('内容不存在');
     return item;
   }
@@ -172,6 +239,8 @@ export class ContentService {
       content,
       coverImage: dto.coverImage ? String(dto.coverImage).slice(0, 500) : null,
       status: coerceStatus(dto.status),
+      channel: coerceChannel(dto.channel),
+      aiMeta: dto.aiMeta && typeof dto.aiMeta === 'object' ? dto.aiMeta : null,
       seoTitle: seo.seoTitle,
       seoDescription: seo.seoDescription,
       tags: asStringArray(dto.tags),
@@ -238,6 +307,17 @@ export class ContentService {
     item.seoDescription = seo.seoDescription;
     if (dto.tags !== undefined) {
       item.tags = asStringArray(dto.tags);
+    }
+    if (dto.channel !== undefined) {
+      item.channel = coerceChannel(dto.channel);
+    }
+    if (dto.aiMeta !== undefined) {
+      item.aiMeta =
+        dto.aiMeta === null
+          ? null
+          : typeof dto.aiMeta === 'object'
+            ? dto.aiMeta
+            : item.aiMeta;
     }
 
     return this.repo.save(item);

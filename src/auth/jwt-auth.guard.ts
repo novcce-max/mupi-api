@@ -28,16 +28,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   canActivate(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest<RequestWithUser>();
 
-    const rawPath =
-      req.baseUrl?.toString() ||
-      req.originalUrl?.toString() ||
-      req.url?.toString() ||
-      '';
-    const path = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    const path = this.resolveHttpPath(req);
 
-    const isAdminRoute = path.startsWith('/api/admin/');
+    /** 与 @Controller('admin/...') 一致；CMS 内容模块为 @Controller('content')，写操作走 /api/content */
+    const useInternalAdmin =
+      path.startsWith('/api/admin/') ||
+      this.isContentCmsInternalRoute(req, path);
 
-    if (isAdminRoute) {
+    if (useInternalAdmin) {
       return this.handleAdminRoute(req, path);
     }
 
@@ -148,9 +146,49 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return true;
   }
 
+  /** 优先 originalUrl，避免 baseUrl 仅为 /api 时路径不完整 */
+  private resolveHttpPath(req: Request): string {
+    const fromOriginal = (req.originalUrl || '').split('?')[0] || '';
+    if (fromOriginal) {
+      return fromOriginal.startsWith('/') ? fromOriginal : `/${fromOriginal}`;
+    }
+    const base = (req.baseUrl || '').toString();
+    const url = (req.url || '').split('?')[0] || '';
+    const combined = `${base}${url}`;
+    const normalized = combined.startsWith('/') ? combined : `/${combined}`;
+    return normalized || '/';
+  }
+
+  /**
+   * ContentController：列表与 slug 详情 GET 公开；按 id 的 GET 对匿名仅返回已发布，
+   * 带齐 X-Admin-User + X-Internal-Secret（与 handleAdminRoute 同规则）时可读草稿。
+   * POST/PATCH/DELETE 带 JwtAuthGuard，由 Next 代理走内部管理鉴权而非会员 JWT。
+   */
+  private isContentCmsInternalRoute(req: Request, path: string): boolean {
+    const method = (req.method || '').toUpperCase();
+    const clean = path.split('?')[0];
+    if (method === 'POST' && clean === '/api/content') {
+      return true;
+    }
+    if (method === 'POST' && clean === '/api/content/ai/inline-suggestions') {
+      return true;
+    }
+    if (method === 'POST' && clean === '/api/media/upload') {
+      return true;
+    }
+    if (method === 'GET' && clean === '/api/media/list') {
+      return true;
+    }
+    if (method === 'PATCH' || method === 'DELETE') {
+      return /^\/api\/content\/\d+$/.test(clean);
+    }
+    return false;
+  }
+
+  /** req.ip 在 trust proxy 开启时为客户端真实 IP（Vercel / Nginx 后面必须如此）。 */
   private extractIp(req: Request): string {
-    const socketIp = req.socket.remoteAddress || req.ip || '';
-    return this.normalizeIp(socketIp);
+    const ip = req.ip || req.socket.remoteAddress || '';
+    return this.normalizeIp(ip);
   }
 
   private normalizeIp(ip: string): string {

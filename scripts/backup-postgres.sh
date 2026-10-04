@@ -8,13 +8,21 @@ OUT_FILE="${BACKUP_DIR}/postgres_${TS}.sql.gz"
 
 mkdir -p "${BACKUP_DIR}"
 
-echo "[backup] writing: ${OUT_FILE}"
+# 从 .env.production 读取 DB_*（宿主机执行 pg_dump，连 127.0.0.1，勿用 host.docker.internal）
+set -a
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/.env.production"
+set +a
 
-# 说明：
-# - 不在宿主机解析 .env（避免 .env 语法差异导致 source 失败）
-# - 直接在 postgres 容器内读取 POSTGRES_* 环境变量并执行 pg_dump
-docker compose -f "${ROOT_DIR}/docker-compose.yml" exec -T postgres sh -lc \
-  'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip -9' > "${OUT_FILE}"
+: "${DB_USERNAME:?missing DB_USERNAME in .env.production}"
+: "${DB_PASSWORD:?missing DB_PASSWORD in .env.production}"
+: "${DB_DATABASE:?missing DB_DATABASE in .env.production}"
+
+PG_HOST="${PG_HOST_BACKUP:-127.0.0.1}"
+export PGPASSWORD="${DB_PASSWORD}"
+
+echo "[backup] writing: ${OUT_FILE} (host=${PG_HOST} user=${DB_USERNAME} db=${DB_DATABASE})"
+
+pg_dump -h "${PG_HOST}" -U "${DB_USERNAME}" "${DB_DATABASE}" | gzip -9 >"${OUT_FILE}"
 
 echo "[backup] done"
-

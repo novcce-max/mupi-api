@@ -15,6 +15,9 @@ function validateEnv(): void {
   const missing: string[] = [];
 
   if (nodeEnv === 'production') {
+    if (!process.env.DATABASE_URL?.trim()) {
+      missing.push('DATABASE_URL');
+    }
     if (!process.env.JWT_SECRET) {
       missing.push('JWT_SECRET');
     }
@@ -41,6 +44,17 @@ async function bootstrap() {
   validateEnv();
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
+  // Vercel / 反向代理后面：让 req.ip 取客户端真实 IP，否则限流与 IP 白名单会把所有访客算成同一个代理地址。
+  const trustProxy =
+    process.env.VERCEL === '1' ||
+    ['1', 'true'].includes((process.env.TRUST_PROXY || '').toLowerCase());
+  if (trustProxy) {
+    (app.getHttpAdapter().getInstance() as express.Express).set(
+      'trust proxy',
+      true,
+    );
+  }
+
   app.setGlobalPrefix('api');
 
   app.enableVersioning({
@@ -51,8 +65,13 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  // 浏览器不直连 API（全部经 Next 同源代理），生产只放行 ALLOWED_ORIGINS；未配置时保持原行为。
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: true,
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
     credentials: true,
   });
 
@@ -74,22 +93,28 @@ async function bootstrap() {
     new TransformInterceptor(),
   );
 
-  const config = new DocumentBuilder()
-    .setTitle('Mupi API')
-    .setDescription('Mupi.cn backend API documentation')
-    .setVersion('1.0.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        in: 'header',
-      },
-      'access-token',
-    )
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // 生产默认不公开 Swagger；需要时设 SWAGGER_ENABLED=true。
+  const swaggerEnabled =
+    (process.env.NODE_ENV || '').toLowerCase() !== 'production' ||
+    ['1', 'true'].includes((process.env.SWAGGER_ENABLED || '').toLowerCase());
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder()
+      .setTitle('Mupi API')
+      .setDescription('Mupi.cn backend API documentation')
+      .setVersion('1.0.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          in: 'header',
+        },
+        'access-token',
+      )
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 3001;
   await app.listen(port, '0.0.0.0');

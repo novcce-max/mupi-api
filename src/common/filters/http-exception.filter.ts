@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { MulterError } from 'multer';
 
 export interface ErrorResponseBody {
   ok: false;
@@ -67,6 +68,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.warn(
         `HttpException ${status} (code=${businessCode}) ${path}: ${message}`,
       );
+    } else if (
+      exception instanceof MulterError &&
+      exception.code === 'LIMIT_FILE_SIZE'
+    ) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE;
+      businessCode = status;
+      message = '文件超过 4MB。请先压缩后再上传。';
+      this.logger.warn(`Multer ${exception.code} ${path}`);
     } else {
       this.logger.error(
         `Unhandled exception ${path}`,

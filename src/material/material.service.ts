@@ -24,6 +24,7 @@ function toFullMaterial(entity: Material): MaterialFull {
     tags: Array.isArray(entity.tags) ? entity.tags : [],
     coverLayout: entity.coverLayout,
     publishMeta: entity.publishMeta ?? {},
+    videoUrl: entity.videoUrl ?? null,
     ...props,
     image: props.image ?? images[0] ?? null,
     detailImages: Array.isArray(props.detailImages)
@@ -43,7 +44,7 @@ export class MaterialService {
     const qb = this.materialRepo.createQueryBuilder('material');
     qb.where('material.status = :status', { status: 'published' });
     qb.orderBy(
-      "COALESCE((material.publish_meta->>'featuredOnHome')::boolean, false)",
+      "(CASE WHEN (material.publish_meta->>'featuredOnHome') IN ('true', 't', '1', 'True') THEN 1 ELSE 0 END)",
       'DESC',
     ).addOrderBy('material.id', 'ASC');
 
@@ -86,6 +87,12 @@ export class MaterialService {
     return material;
   }
 
+  async adminFindOneBySlug(slug: string): Promise<Material | null> {
+    const clean = slug.trim();
+    if (!clean) return null;
+    return this.materialRepo.findOne({ where: { slug: clean } });
+  }
+
   async adminCreate(dto: CreateMaterialDto): Promise<Material> {
     const entity = this.materialRepo.create({
       name: dto.name,
@@ -100,6 +107,7 @@ export class MaterialService {
       tags: dto.tags ?? [],
       coverLayout: dto.coverLayout ?? 'single',
       publishMeta: dto.publishMeta ?? {},
+      videoUrl: dto.videoUrl ?? null,
     });
     return this.materialRepo.save(entity);
   }
@@ -128,6 +136,7 @@ export class MaterialService {
       status: dto.status ?? material.status,
       tags: dto.tags ?? material.tags,
       coverLayout: dto.coverLayout ?? material.coverLayout,
+      videoUrl: dto.videoUrl !== undefined ? dto.videoUrl : material.videoUrl,
       publishMeta:
         (dto.publishMeta as QueryDeepPartialEntity<Record<string, unknown>>) ??
         (material.publishMeta as QueryDeepPartialEntity<

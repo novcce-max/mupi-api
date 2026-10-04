@@ -46,6 +46,7 @@ function toCaseItem(entity: Case): CaseItem {
     beforeImages: Array.isArray(entity.beforeImages) ? entity.beforeImages : [],
     afterImages: Array.isArray(entity.afterImages) ? entity.afterImages : [],
     coverImage: entity.coverImage ?? null,
+    videoUrl: entity.videoUrl ?? null,
     tags: Array.isArray(entity.tags) ? entity.tags : [],
     coverLayout: entity.coverLayout ?? 'single',
     publishMeta:
@@ -122,8 +123,9 @@ export class CaseService {
       });
     }
 
+    // 勿用 ::boolean 强转：publish_meta 里若为非 true/false 的字符串会导致 PG 报错整表 500
     qb.orderBy(
-      "COALESCE((c.publish_meta->>'featuredOnHome')::boolean, false)",
+      "(CASE WHEN (c.publish_meta->>'featuredOnHome') IN ('true', 't', '1', 'True') THEN 1 ELSE 0 END)",
       'DESC',
     ).addOrderBy('c.createdAt', 'DESC');
 
@@ -188,6 +190,7 @@ export class CaseService {
       afterImages: dto.afterImages ?? [],
       relatedProblems: dto.relatedProblems ?? [],
       coverImage: dto.coverImage ?? null,
+      videoUrl: dto.videoUrl ?? null,
       seoTitle: dto.seoTitle ?? null,
       seoDescription: dto.seoDescription ?? null,
       published: dto.published ?? false,
@@ -224,6 +227,7 @@ export class CaseService {
       relatedProblems: dto.relatedProblems ?? existing.relatedProblems,
       coverImage:
         dto.coverImage !== undefined ? dto.coverImage : existing.coverImage,
+      videoUrl: dto.videoUrl !== undefined ? dto.videoUrl : existing.videoUrl,
       seoTitle: dto.seoTitle !== undefined ? dto.seoTitle : existing.seoTitle,
       seoDescription:
         dto.seoDescription !== undefined

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 
 import {
   MemberService,
@@ -8,6 +8,7 @@ import {
 import { MemberHistory } from './entities/member-history.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { IdParamDto } from '../common/dto/id-param.dto';
+import { UpdateMemberDto } from './dto/update-member.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('member')
@@ -26,5 +27,13 @@ export class MemberController {
     @Param() param: IdParamDto,
   ): Promise<MemberResponse<MemberHistory[]>> {
     return this.memberService.getHistoryById(param.id);
+  }
+
+  @Patch(':id')
+  async patchProfile(
+    @Param() param: IdParamDto,
+    @Body() body: UpdateMemberDto,
+  ): Promise<MemberResponse<MemberOverview | null>> {
+    return this.memberService.updateNickname(param.id, body.nickname);
   }
 }

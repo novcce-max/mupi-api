@@ -48,5 +48,9 @@ export class UpdateMaterialDto {
   coverLayout?: string;
 
   @IsOptional()
+  @IsString()
+  videoUrl?: string | null;
+
+  @IsOptional()
   publishMeta?: Record<string, unknown>;
 }

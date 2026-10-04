@@ -46,5 +46,9 @@ export class CreateMaterialDto {
   coverLayout?: string;
 
   @IsOptional()
+  @IsString()
+  videoUrl?: string | null;
+
+  @IsOptional()
   publishMeta?: Record<string, unknown>;
 }

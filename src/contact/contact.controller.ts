@@ -18,6 +18,7 @@ import { ContactService, ContactCreateResult } from './contact.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { ContactLogsQueryDto } from './dto/contact-logs-query.dto';
 import { UpdateContactLogDto } from './dto/update-contact-log.dto';
+import { ContactFunnelQueryDto } from './dto/contact-funnel-query.dto';
 
 @Controller('contact')
 export class ContactController {
@@ -45,7 +46,7 @@ export class ContactController {
   ): Promise<ContactCreateResult> {
     const ipHeader = (req.headers['x-forwarded-for'] as string) ?? '';
     const ip =
-      ipHeader.split(',')[0].trim() || req.socket.remoteAddress || req.ip || '';
+      req.ip || ipHeader.split(',')[0].trim() || req.socket.remoteAddress || '';
 
     const userAgent = (req.headers['user-agent'] as string) ?? null;
 
@@ -69,15 +70,18 @@ export class ContactController {
   }
 
   @Get('summary')
-  async summary(@Req() req: Request) {
+  async summary(@Req() req: Request, @Query() query: ContactFunnelQueryDto) {
     this.checkAdminKey(req);
-    return this.contactService.getSummary();
+    return this.contactService.getSummary(query);
   }
 
   @Get('funnel-pages')
-  async funnelPages(@Req() req: Request) {
+  async funnelPages(
+    @Req() req: Request,
+    @Query() query: ContactFunnelQueryDto,
+  ) {
     this.checkAdminKey(req);
-    return this.contactService.getFunnelPages();
+    return this.contactService.getFunnelPages(query);
   }
 
   @Patch('logs/:id')

@@ -1,10 +1,33 @@
-version: "3"
+# 数据库：宝塔面板 PostgreSQL（宿主机）。API 容器经 host.docker.internal 连接。
+# 基础镜像走华为云 SWR（国内拉取稳定）
 services:
   mupi-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mupi-api:latest
+    container_name: mupi-api
+    restart: always
     ports:
       - "3001:3001"
     env_file:
-      - .env
-    restart: always
+      - .env.production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mupi-redis
+    networks:
+      - mupi-network
 
+  mupi-redis:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/redis:7-alpine
+    container_name: mupi-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - mupi-network
+
+networks:
+  mupi-network:
+    driver: bridge

@@ -6,6 +6,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import type * as jwt from 'jsonwebtoken';
 
 import { Member } from '../member/entities/member.entity';
+import { MailModule } from '../mail/mail.module';
+import { AuthEmailOtp } from './entities/auth-email-otp.entity';
+import { AuthPasswordReset } from './entities/auth-password-reset.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -13,7 +16,8 @@ import { JwtStrategy } from './jwt.strategy';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Member]),
+    MailModule,
+    TypeOrmModule.forFeature([Member, AuthEmailOtp, AuthPasswordReset]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

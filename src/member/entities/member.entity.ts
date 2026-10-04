@@ -22,8 +22,12 @@ export class Member {
   avatarUrl: string | null;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 50, unique: true })
-  phone: string;
+  @Column({ type: 'varchar', length: 255, nullable: true, unique: true })
+  email: string | null;
+
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 50, nullable: true, unique: true })
+  phone: string | null;
 
   @Column({
     name: 'password_hash',

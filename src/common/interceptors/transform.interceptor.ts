@@ -46,9 +46,7 @@ export class TransformInterceptor implements NestInterceptor {
         }
 
         const response: ApiSuccessResponse<unknown> = { ok: true, data };
-        return requestId
-          ? { ...response, requestId }
-          : response;
+        return requestId ? { ...response, requestId } : response;
       }),
     );
   }

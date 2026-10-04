@@ -71,8 +71,20 @@ export class CreateWikiSpeciesDto {
   priceRange?: string;
 
   @ApiProperty({
-    description: '扩展属性，存放耐磨性、环保等级等 JSON 信息，可选',
-    example: { abrasionResistance: 'AC4', ecoLevel: 'E0' },
+    description:
+      '扩展属性 JSON：正文块（subtitle、sourceAndProcess、faq 等）与前台「关键参数表」白名单字段（如 englishName、latinName、grainDirection、formaldehydeEmission、fireRating、referencePrice 等）',
+    example: {
+      chineseName: '胡桃木木皮',
+      englishName: 'Walnut Veneer',
+      latinName: 'Juglans spp.',
+      subtitle: '纹理层次与稳定性说明',
+      colorTone: '深棕',
+      grain: '山纹 / 直纹',
+      grainDirection: '顺纹',
+      formaldehydeEmission: '≤0.124 mg/m³',
+      emissionGrade: 'ENF',
+      referencePrice: '¥120 - ¥180 / 张（参考）',
+    },
     required: false,
   })
   @IsOptional()

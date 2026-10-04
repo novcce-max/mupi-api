@@ -1,8 +1,8 @@
-version: "3.9"
-
+# 数据库：宝塔 PostgreSQL（宿主机）。不使用 internal 网络，否则容器无法访问宿主机库。
+# 基础镜像走华为云 SWR
 services:
   mupi-nginx:
-    image: nginx:alpine
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/nginx:alpine
     container_name: mupi-nginx
     restart: always
     ports:
@@ -22,10 +22,11 @@ services:
     restart: always
     env_file:
       - .env.production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "3000:3000"
+      - "3001:3001"
     depends_on:
-      - mupi-db
       - mupi-redis
     networks:
       - internal_net
@@ -33,29 +34,14 @@ services:
       test:
         [
           "CMD-SHELL",
-          "node -e \"const port=process.env.PORT||3000;fetch('http://127.0.0.1:'+port+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1));\"",
+          "node -e \"const port=process.env.PORT||3001;fetch('http://127.0.0.1:'+port+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1));\"",
         ]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  mupi-db:
-    image: postgres:16-alpine
-    container_name: mupi-db
-    restart: always
-    env_file:
-      - .env.production
-    environment:
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_DATABASE}
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    networks:
-      - internal_net
-
   mupi-redis:
-    image: redis:7-alpine
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/redis:7-alpine
     container_name: mupi-redis
     restart: always
     command: ["redis-server", "--appendonly", "yes"]
@@ -67,5 +53,3 @@ services:
 networks:
   internal_net:
     driver: bridge
-    internal: true
-

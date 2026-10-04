@@ -67,6 +67,10 @@ export class CreateCaseDto {
 
   @IsOptional()
   @IsString()
+  videoUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
   seoTitle?: string;
 
   @IsOptional()
