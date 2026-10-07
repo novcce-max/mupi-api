@@ -10,9 +10,22 @@ import { UpdateMaterialDto } from './dto/update-material.dto';
 /** 与前端 MaterialItem 对齐的完整结构（entity + properties 合并） */
 export type MaterialFull = Record<string, unknown>;
 
+function isPlaceholderImage(src: unknown): boolean {
+  return typeof src !== 'string' || !src.trim() || src.trim().startsWith('/images/');
+}
+
+/** 后台图库第一张真实图就是封面。properties.image 里的旧占位图不能盖过图库。 */
+function coverFromGallery(propsImage: unknown, images: string[]): string | null {
+  const uploaded = images.find((src) => !isPlaceholderImage(src));
+  if (uploaded) return uploaded.trim();
+  if (typeof propsImage === 'string' && propsImage.trim()) return propsImage.trim();
+  return images[0] ?? null;
+}
+
 function toFullMaterial(entity: Material): MaterialFull {
   const props = entity.properties ?? {};
   const images = Array.isArray(entity.images) ? entity.images : [];
+  const galleryHasUpload = images.some((src) => !isPlaceholderImage(src));
   return {
     slug: entity.slug,
     name: entity.name,
@@ -26,10 +39,12 @@ function toFullMaterial(entity: Material): MaterialFull {
     publishMeta: entity.publishMeta ?? {},
     videoUrl: entity.videoUrl ?? null,
     ...props,
-    image: props.image ?? images[0] ?? null,
-    detailImages: Array.isArray(props.detailImages)
-      ? props.detailImages
-      : images,
+    image: coverFromGallery(props.image, images),
+    detailImages: galleryHasUpload
+      ? images
+      : Array.isArray(props.detailImages)
+        ? props.detailImages
+        : images,
   };
 }
 
