@@ -103,4 +103,10 @@ export class UpdateCaseDto {
 
   @IsOptional()
   publishMeta?: Record<string, unknown>;
+
+  /** 关联木皮 materials.id 列表；传入则全量覆盖 */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  materialIds?: string[];
 }

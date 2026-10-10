@@ -51,4 +51,10 @@ export class CreateMaterialDto {
 
   @IsOptional()
   publishMeta?: Record<string, unknown>;
+
+  /** 关联施工案例 cases.id 列表（多对多） */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  caseIds?: string[];
 }

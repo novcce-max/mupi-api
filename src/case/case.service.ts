@@ -4,8 +4,9 @@ import { Repository } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 
+import { CaseMaterialService } from '../case-material/case-material.service';
 import { Case } from './entities/case.entity';
-import { CaseItem } from './case.constants';
+import { CaseItem, LinkedMaterialItem } from './case.constants';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 
@@ -14,8 +15,13 @@ export interface CaseResponse<T = unknown> {
   data: T;
 }
 
+export type AdminCaseDetail = Case & { materialIds: string[] };
+
 /** 长期稳定：保证返回结构完整，所有字段有安全默认值，避免前台 undefined 导致 .includes/.map 报错 */
-function toCaseItem(entity: Case): CaseItem {
+function toCaseItem(
+  entity: Case,
+  linkedMaterials: LinkedMaterialItem[] = [],
+): CaseItem {
   const rawRelated = Array.isArray(entity.relatedProblems)
     ? entity.relatedProblems
     : [];
@@ -53,6 +59,7 @@ function toCaseItem(entity: Case): CaseItem {
       entity.publishMeta && typeof entity.publishMeta === 'object'
         ? entity.publishMeta
         : {},
+    linkedMaterials,
   };
 }
 
@@ -64,6 +71,7 @@ export class CaseService {
     @InjectRepository(Case)
     private readonly repository: Repository<Case>,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly caseMaterialService: CaseMaterialService,
   ) {}
 
   async findAll(params?: {
@@ -130,7 +138,7 @@ export class CaseService {
     ).addOrderBy('c.createdAt', 'DESC');
 
     const list = await qb.getMany();
-    const items = list.map(toCaseItem);
+    const items = list.map((entity) => toCaseItem(entity));
 
     if (cacheKey) {
       try {
@@ -150,9 +158,19 @@ export class CaseService {
     const entity = await this.repository.findOne({
       where: { slug, published: true },
     });
+    if (!entity) {
+      return { ok: true, data: null };
+    }
+    let linkedMaterials: LinkedMaterialItem[] = [];
+    try {
+      linkedMaterials =
+        await this.caseMaterialService.findPublishedMaterialsForCase(entity.id);
+    } catch {
+      linkedMaterials = [];
+    }
     return {
       ok: true,
-      data: entity ? toCaseItem(entity) : null,
+      data: toCaseItem(entity, linkedMaterials),
     };
   }
 
@@ -162,15 +180,18 @@ export class CaseService {
     return this.repository.find({ order: { id: 'ASC' } });
   }
 
-  async adminFindOne(id: string): Promise<Case> {
+  async adminFindOne(id: string): Promise<AdminCaseDetail> {
     const entity = await this.repository.findOne({ where: { id } });
     if (!entity) {
       throw new NotFoundException('Case not found');
     }
-    return entity;
+    const materialIds = await this.caseMaterialService.getMaterialIdsForCase(
+      entity.id,
+    );
+    return { ...entity, materialIds };
   }
 
-  async adminCreate(dto: CreateCaseDto): Promise<Case> {
+  async adminCreate(dto: CreateCaseDto): Promise<AdminCaseDetail> {
     const entity = this.repository.create({
       slug: dto.slug,
       title: dto.title,
@@ -199,12 +220,23 @@ export class CaseService {
       publishMeta: dto.publishMeta ?? {},
     });
     const saved = await this.repository.save(entity);
+    const materialIds =
+      dto.materialIds !== undefined
+        ? await this.caseMaterialService.setMaterialsForCase(
+            saved.id,
+            dto.materialIds,
+          )
+        : [];
+    await this.syncLegacyMaterialFields(saved.id, materialIds);
     await this.bumpCacheVersionSafely();
-    return saved;
+    return this.adminFindOne(saved.id);
   }
 
-  async adminUpdate(id: string, dto: UpdateCaseDto): Promise<Case> {
-    const existing = await this.adminFindOne(id);
+  async adminUpdate(id: string, dto: UpdateCaseDto): Promise<AdminCaseDetail> {
+    const existing = await this.repository.findOne({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Case not found');
+    }
     const merged: Case = {
       ...existing,
       slug: dto.slug ?? existing.slug,
@@ -240,8 +272,15 @@ export class CaseService {
       publishMeta: dto.publishMeta ?? existing.publishMeta,
     };
     await this.repository.save(merged);
+    if (dto.materialIds !== undefined) {
+      const materialIds = await this.caseMaterialService.setMaterialsForCase(
+        id,
+        dto.materialIds,
+      );
+      await this.syncLegacyMaterialFields(id, materialIds);
+    }
     await this.bumpCacheVersionSafely();
-    return merged;
+    return this.adminFindOne(id);
   }
 
   async adminRemove(id: string): Promise<void> {
@@ -251,6 +290,21 @@ export class CaseService {
     }
     await this.repository.delete(id);
     await this.bumpCacheVersionSafely();
+  }
+
+  /** 关联木皮后，同步遗留主材文案字段，兼容旧前台链路 */
+  private async syncLegacyMaterialFields(
+    caseId: string,
+    materialIds: string[],
+  ): Promise<void> {
+    const primaryId = materialIds[0];
+    if (!primaryId) return;
+    const material = await this.caseMaterialService.findMaterialById(primaryId);
+    if (!material) return;
+    await this.repository.update(caseId, {
+      materialName: material.name,
+      materialHref: `/mupi/${material.slug}`,
+    });
   }
 
   private async buildCacheKey(

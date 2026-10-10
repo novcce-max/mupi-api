@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   UploadedFile,
   UseGuards,
@@ -9,10 +11,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { MEDIA_UPLOAD_MAX_BYTES } from './media-upload.limits';
 import { R2UploadService } from './r2-upload.service';
-
-/** Vercel Function 请求体上限 4.5MB，预留 multipart 开销。 */
-const MAX_BYTES = 4 * 1024 * 1024;
 
 @Controller('media')
 export class MediaController {
@@ -28,7 +28,7 @@ export class MediaController {
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: MAX_BYTES },
+      limits: { fileSize: MEDIA_UPLOAD_MAX_BYTES },
     }),
   )
   async upload(@UploadedFile() file: Express.Multer.File | undefined) {
@@ -41,5 +41,12 @@ export class MediaController {
       originalName: file.originalname,
     });
     return result;
+  }
+
+  @Delete(':name')
+  @UseGuards(JwtAuthGuard)
+  async remove(@Param('name') name: string) {
+    await this.r2.deleteByFileName(name);
+    return { deleted: true };
   }
 }

@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeleteObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -167,6 +169,32 @@ export class R2UploadService {
     return out.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }
+
+  /** 按图库列表里的文件名删除。name 只是对象键最后一段。 */
+  async deleteByFileName(fileName: string): Promise<void> {
+    const safe = fileName.split('/').pop()?.trim() ?? '';
+    if (!safe || safe.includes('..')) {
+      throw new BadRequestException('无效文件名');
+    }
+    const objects = await this.listGalleryObjects();
+    const match = objects.find((item) => item.name === safe);
+    if (!match) {
+      throw new NotFoundException('图片不存在或已删除');
+    }
+    let key = '';
+    try {
+      key = decodeURIComponent(new URL(match.url).pathname.replace(/^\//, ''));
+    } catch {
+      throw new BadRequestException('无法解析图片地址');
+    }
+    if (!key.startsWith('uploads/')) {
+      throw new BadRequestException('只能删除图库 uploads 下的图片');
+    }
+    const bucket = this.config.get<string>('R2_BUCKET')!.trim();
+    await this.getClient().send(
+      new DeleteObjectCommand({ Bucket: bucket, Key: key }),
     );
   }
 }

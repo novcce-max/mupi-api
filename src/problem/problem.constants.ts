@@ -326,36 +326,6 @@ export const PROBLEM_DETAILS: Record<string, ProblemDetail> = {
     ],
     recommendedMaterialSlugs: ['tech-veneer', 'white-oak'],
   },
-  jiabianbie: {
-    slug: 'jiabianbie',
-    category: '材料与选型',
-    title: '假木皮如何鉴别',
-    summary: '鉴别要看纹理规律、切面结构、批次一致性和来源信息。',
-    heroTitle: '假木皮鉴别方法：现场可执行检查清单',
-    heroSubtitle: '通过抽样、对照、记录三个步骤，降低采购风险。',
-    heroImage: '/images/case-office.svg',
-    symptoms: [
-      { title: '纹理重复规律异常', frequency: '中', scene: '批量供货' },
-      { title: '切面层次不自然', frequency: '中', scene: '天然木皮采购' },
-      { title: '同批次颜色波动过大', frequency: '高', scene: '多供应商混采' },
-    ],
-    reasons: ['市场存在低价替代材料', '外观仿真度提高', '采购环节缺少质检'],
-    steps: ['抽样检查纹理与切面', '核验来源与批次信息', '必要时做第三方检测'],
-    tools: ['放大镜', '抽样记录表', '对照色板'],
-    materials: ['样板对照件', '批次标签', '检测报告模板'],
-    preventions: ['选择可追溯供应链', '进场抽检流程化', '样板确认后再批量采购'],
-    faq: [
-      {
-        q: '只看外观能判断真伪吗？',
-        a: '不建议，仅靠外观容易误判，需结合切面和批次信息综合判断。',
-      },
-      {
-        q: '如何降低混批风险？',
-        a: '同项目尽量固定供应链，进场按批次封样与抽检。',
-      },
-    ],
-    recommendedMaterialSlugs: ['black-walnut', 'white-oak'],
-  },
   'tiepi-zhuyishixiang': {
     slug: 'tiepi-zhuyishixiang',
     category: '施工指南',

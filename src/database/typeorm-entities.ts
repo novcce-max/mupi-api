@@ -3,6 +3,7 @@ import { AdminUser } from '../admin-user/entities/admin-user.entity';
 import { AuthEmailOtp } from '../auth/entities/auth-email-otp.entity';
 import { AuthPasswordReset } from '../auth/entities/auth-password-reset.entity';
 import { Case } from '../case/entities/case.entity';
+import { CaseMaterial } from '../case-material/entities/case-material.entity';
 import { ContactLog } from '../contact/entities/contact-log.entity';
 import { Material } from '../material/entities/material.entity';
 import { Member } from '../member/entities/member.entity';
@@ -25,6 +26,7 @@ export const TYPEORM_ENTITIES = [
   AuthEmailOtp,
   AuthPasswordReset,
   Case,
+  CaseMaterial,
   ContactLog,
   ContentItem,
   AnalyticsEvent,

@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { ContactModule } from './contact/contact.module';
 import { WikiModule } from './wiki/wiki.module';
 import { MaterialModule } from './material/material.module';
+import { CaseMaterialModule } from './case-material/case-material.module';
 import { MemberModule } from './member/member.module';
 import { CaseModule } from './case/case.module';
 import { ProblemModule } from './problem/problem.module';
@@ -223,6 +224,7 @@ const mupiApiEnvFiles = resolveMupiApiEnvFilePaths();
     ContactModule,
     WikiModule,
     MaterialModule,
+    CaseMaterialModule,
     MemberModule,
     CaseModule,
     ProblemModule,

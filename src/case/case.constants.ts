@@ -17,6 +17,16 @@ export type RelatedProblemLink = {
   href: string;
 };
 
+export type LinkedMaterialItem = {
+  id: string;
+  slug: string;
+  name: string;
+  colorGroup: string;
+  textureType: string | null;
+  thickness: string | null;
+  image: string | null;
+};
+
 export interface CaseItem {
   slug: string;
   title: string;
@@ -41,6 +51,8 @@ export interface CaseItem {
   tags?: string[];
   coverLayout?: 'single' | 'triple' | string;
   publishMeta?: Record<string, unknown>;
+  /** 后台真实关联的已发布木皮（按 ID） */
+  linkedMaterials?: LinkedMaterialItem[];
 }
 
 export const CASES: CaseItem[] = [
@@ -159,10 +171,7 @@ export const CASES: CaseItem[] = [
     solution: '先修补基层再贴皮，重点部位加固压实，分段验收。',
     materials: ['科技木皮', '修补腻子', '胶水'],
     processImages: ['基层修补', '贴皮压实', '翻新验收'],
-    relatedProblems: [
-      { label: '假木皮如何鉴别', href: '/wenti/jiabianbie' },
-      { label: '木皮脱胶怎么处理', href: '/wenti/tuojiao' },
-    ],
+    relatedProblems: [{ label: '木皮脱胶怎么处理', href: '/wenti/tuojiao' }],
   },
   {
     slug: 'jiaju-project-g',

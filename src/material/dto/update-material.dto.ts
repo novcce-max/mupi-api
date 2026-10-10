@@ -53,4 +53,10 @@ export class UpdateMaterialDto {
 
   @IsOptional()
   publishMeta?: Record<string, unknown>;
+
+  /** 关联施工案例 cases.id 列表；传入则全量覆盖 */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  caseIds?: string[];
 }

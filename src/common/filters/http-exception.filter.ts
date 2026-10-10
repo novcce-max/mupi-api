@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { MulterError } from 'multer';
+import { MEDIA_UPLOAD_MAX_BYTES } from '../../media/media-upload.limits';
 
 export interface ErrorResponseBody {
   ok: false;
@@ -74,7 +75,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
     ) {
       status = HttpStatus.PAYLOAD_TOO_LARGE;
       businessCode = status;
-      message = '文件超过 4MB。请先压缩后再上传。';
+      const mb = Math.round(MEDIA_UPLOAD_MAX_BYTES / 1024 / 1024);
+      message = `文件超过 ${mb}MB 上限。请缩小后再传（后台一般会自动压缩）。`;
       this.logger.warn(`Multer ${exception.code} ${path}`);
     } else {
       this.logger.error(

@@ -160,7 +160,10 @@ export class ContactService {
     return value;
   }
 
-  private normalizeCountryLabel(rawCountryCode: string, rawCountry: string): string {
+  private normalizeCountryLabel(
+    rawCountryCode: string,
+    rawCountry: string,
+  ): string {
     const code = rawCountryCode.trim().toUpperCase();
     const country = rawCountry.trim();
     if (code === 'HK') return '香港';
@@ -205,7 +208,9 @@ export class ContactService {
     }
   }
 
-  private async resolveGeoByIp(rawIp: string | null | undefined): Promise<IpGeoResolved> {
+  private async resolveGeoByIp(
+    rawIp: string | null | undefined,
+  ): Promise<IpGeoResolved> {
     const ip = this.sanitizeIp(rawIp);
     if (!ip) return { regionLabel: '未知' };
     if (this.isPrivateOrLocalIp(ip)) return { regionLabel: '内网/本机' };

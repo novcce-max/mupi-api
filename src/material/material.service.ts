@@ -3,29 +3,102 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 
+import {
+  CaseMaterialService,
+  LinkedCaseSummary,
+} from '../case-material/case-material.service';
 import { Material } from './entities/material.entity';
 import { CreateMaterialDto } from './dto/create-material.dto';
 import { UpdateMaterialDto } from './dto/update-material.dto';
 
 /** 与前端 MaterialItem 对齐的完整结构（entity + properties 合并） */
-export type MaterialFull = Record<string, unknown>;
+export type MaterialFull = Record<string, unknown> & {
+  linkedCases?: LinkedCaseSummary[];
+};
+
+export type AdminMaterialDetail = Material & { caseIds: string[] };
 
 function isPlaceholderImage(src: unknown): boolean {
-  return typeof src !== 'string' || !src.trim() || src.trim().startsWith('/images/');
+  return (
+    typeof src !== 'string' || !src.trim() || src.trim().startsWith('/images/')
+  );
 }
 
 /** 后台图库第一张真实图就是封面。properties.image 里的旧占位图不能盖过图库。 */
-function coverFromGallery(propsImage: unknown, images: string[]): string | null {
+function coverFromGallery(
+  propsImage: unknown,
+  images: string[],
+): string | null {
   const uploaded = images.find((src) => !isPlaceholderImage(src));
   if (uploaded) return uploaded.trim();
-  if (typeof propsImage === 'string' && propsImage.trim()) return propsImage.trim();
+  if (typeof propsImage === 'string' && propsImage.trim())
+    return propsImage.trim();
   return images[0] ?? null;
+}
+
+/** Hub 页内子类：只透传规范化后的数组；非法项丢弃 */
+function normalizeVariants(raw: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const keyRe = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const seen = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const label = String(row.label ?? '').trim();
+    if (!label) continue;
+    let key = String(row.key ?? '')
+      .trim()
+      .toLowerCase();
+    if (!key || !keyRe.test(key)) {
+      let h = 0;
+      for (let i = 0; i < label.length; i += 1) {
+        h = (h * 31 + label.charCodeAt(i)) >>> 0;
+      }
+      key = `v-${h.toString(36)}`;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const thicknessRaw = row.thickness;
+    const thickness = Array.isArray(thicknessRaw)
+      ? thicknessRaw.map((v) => String(v).trim()).filter(Boolean)
+      : typeof thicknessRaw === 'string' && thicknessRaw.trim()
+        ? thicknessRaw
+            .split(/[,，、/\s]+/)
+            .map((v) => v.trim())
+            .filter(Boolean)
+        : undefined;
+    const images = Array.isArray(row.images)
+      ? row.images.map((v) => String(v ?? '').trim()).filter(Boolean)
+      : undefined;
+    out.push({
+      key,
+      label,
+      ...(row.texture != null && String(row.texture).trim()
+        ? { texture: String(row.texture).trim() }
+        : {}),
+      ...(thickness?.length ? { thickness } : {}),
+      ...(row.usageNote != null && String(row.usageNote).trim()
+        ? { usageNote: String(row.usageNote).trim() }
+        : {}),
+      ...(row.priceNote != null && String(row.priceNote).trim()
+        ? { priceNote: String(row.priceNote).trim() }
+        : {}),
+      ...(images?.length ? { images } : {}),
+      ...(row.note != null && String(row.note).trim()
+        ? { note: String(row.note).trim() }
+        : {}),
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 function toFullMaterial(entity: Material): MaterialFull {
   const props = entity.properties ?? {};
+  const { variants: _rawVariants, ...restProps } = props;
   const images = Array.isArray(entity.images) ? entity.images : [];
   const galleryHasUpload = images.some((src) => !isPlaceholderImage(src));
+  const variants = normalizeVariants(_rawVariants);
   return {
     slug: entity.slug,
     name: entity.name,
@@ -38,13 +111,14 @@ function toFullMaterial(entity: Material): MaterialFull {
     coverLayout: entity.coverLayout,
     publishMeta: entity.publishMeta ?? {},
     videoUrl: entity.videoUrl ?? null,
-    ...props,
+    ...restProps,
     image: coverFromGallery(props.image, images),
     detailImages: galleryHasUpload
       ? images
       : Array.isArray(props.detailImages)
         ? props.detailImages
         : images,
+    ...(variants ? { variants } : {}),
   };
 }
 
@@ -53,6 +127,7 @@ export class MaterialService {
   constructor(
     @InjectRepository(Material)
     private readonly materialRepo: Repository<Material>,
+    private readonly caseMaterialService: CaseMaterialService,
   ) {}
 
   async findAll(): Promise<MaterialFull[]> {
@@ -71,7 +146,15 @@ export class MaterialService {
     const entity = await this.materialRepo.findOne({
       where: { slug, status: 'published' },
     });
-    return entity ? toFullMaterial(entity) : null;
+    if (!entity) return null;
+    const full = toFullMaterial(entity);
+    try {
+      full.linkedCases =
+        await this.caseMaterialService.findPublishedCasesForMaterial(entity.id);
+    } catch {
+      full.linkedCases = [];
+    }
+    return full;
   }
 
   async findForCompare(slugs: string[]): Promise<Material[]> {
@@ -94,12 +177,15 @@ export class MaterialService {
     });
   }
 
-  async adminFindOne(id: string): Promise<Material> {
+  async adminFindOne(id: string): Promise<AdminMaterialDetail> {
     const material = await this.materialRepo.findOne({ where: { id } });
     if (!material) {
       throw new NotFoundException('Material not found');
     }
-    return material;
+    const caseIds = await this.caseMaterialService.getCaseIdsForMaterial(
+      material.id,
+    );
+    return { ...material, caseIds };
   }
 
   async adminFindOneBySlug(slug: string): Promise<Material | null> {
@@ -108,7 +194,7 @@ export class MaterialService {
     return this.materialRepo.findOne({ where: { slug: clean } });
   }
 
-  async adminCreate(dto: CreateMaterialDto): Promise<Material> {
+  async adminCreate(dto: CreateMaterialDto): Promise<AdminMaterialDetail> {
     const entity = this.materialRepo.create({
       name: dto.name,
       slug: dto.slug,
@@ -124,11 +210,21 @@ export class MaterialService {
       publishMeta: dto.publishMeta ?? {},
       videoUrl: dto.videoUrl ?? null,
     });
-    return this.materialRepo.save(entity);
+    const saved = await this.materialRepo.save(entity);
+    if (dto.caseIds !== undefined) {
+      await this.caseMaterialService.setCasesForMaterial(saved.id, dto.caseIds);
+    }
+    return this.adminFindOne(saved.id);
   }
 
-  async adminUpdate(id: string, dto: UpdateMaterialDto): Promise<Material> {
-    const material = await this.adminFindOne(id);
+  async adminUpdate(
+    id: string,
+    dto: UpdateMaterialDto,
+  ): Promise<AdminMaterialDetail> {
+    const material = await this.materialRepo.findOne({ where: { id } });
+    if (!material) {
+      throw new NotFoundException('Material not found');
+    }
     const next: QueryDeepPartialEntity<Material> = {
       name: dto.name ?? material.name,
       slug: dto.slug ?? material.slug,
@@ -159,6 +255,9 @@ export class MaterialService {
         >),
     };
     await this.materialRepo.update(id, next);
+    if (dto.caseIds !== undefined) {
+      await this.caseMaterialService.setCasesForMaterial(id, dto.caseIds);
+    }
     return this.adminFindOne(id);
   }
 

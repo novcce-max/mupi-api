@@ -91,4 +91,10 @@ export class CreateCaseDto {
 
   @IsOptional()
   publishMeta?: Record<string, unknown>;
+
+  /** 关联木皮 materials.id 列表（多对多） */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  materialIds?: string[];
 }
