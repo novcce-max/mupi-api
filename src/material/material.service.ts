@@ -36,7 +36,50 @@ function coverFromGallery(
   return images[0] ?? null;
 }
 
-/** Hub 页内子类：只透传规范化后的数组；非法项丢弃 */
+const VARIANT_LABEL_KEY_MAP: Record<string, string> = {
+  直纹: 'zhiwen',
+  山纹: 'shanwen',
+  树榴: 'shuliu',
+  榴纹: 'shuliu',
+  鸟眼: 'niaoyan',
+  影木: 'yingmu',
+  弦切: 'xianqie',
+  径切: 'jingqie',
+  旋切: 'xuanqie',
+  厚皮: 'houpi',
+  薄皮: 'baopi',
+  染色: 'ranse',
+  科技木: 'keji',
+  天然: 'tianran',
+};
+
+function slugifyVariantKey(label: string): string {
+  const trimmed = (label || '').trim();
+  const mapped = VARIANT_LABEL_KEY_MAP[trimmed.replace(/\s+/g, '')];
+  if (mapped) return mapped;
+  const ascii = trimmed
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (ascii && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(ascii)) return ascii;
+  let h = 0;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    h = (h * 31 + trimmed.charCodeAt(i)) >>> 0;
+  }
+  return `v-${h.toString(36)}`;
+}
+
+function uniquifyVariantKey(base: string, seen: Set<string>): string {
+  let candidate = base;
+  if (!seen.has(candidate)) return candidate;
+  let n = 2;
+  while (seen.has(`${candidate}-${n}`)) n += 1;
+  return `${candidate}-${n}`;
+}
+
+/** Hub 页内子类：只透传规范化后的数组；非法项丢弃；重复 key 自动加后缀 */
 function normalizeVariants(raw: unknown): Record<string, unknown>[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const keyRe = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -51,13 +94,9 @@ function normalizeVariants(raw: unknown): Record<string, unknown>[] | undefined 
       .trim()
       .toLowerCase();
     if (!key || !keyRe.test(key)) {
-      let h = 0;
-      for (let i = 0; i < label.length; i += 1) {
-        h = (h * 31 + label.charCodeAt(i)) >>> 0;
-      }
-      key = `v-${h.toString(36)}`;
+      key = slugifyVariantKey(label);
     }
-    if (seen.has(key)) continue;
+    key = uniquifyVariantKey(key, seen);
     seen.add(key);
     const thicknessRaw = row.thickness;
     const thickness = Array.isArray(thicknessRaw)
